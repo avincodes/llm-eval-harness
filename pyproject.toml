@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evalkit"
+version = "0.0.1"
+description = "Lightweight LLM evaluation harness."
+readme = "README.md"
+requires-python = ">=3.10"
+authors = [{ name = "Avin Indrasoma" }]
+license = { text = "MIT" }
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[tool.setuptools.packages.find]
+include = ["evalkit*"]
+exclude = ["tests*", "experiments*", "runs*"]
