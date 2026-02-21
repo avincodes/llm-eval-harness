@@ -1,7 +1,9 @@
 """Core abstractions for the eval harness.
 
-Starting with the data primitives - Example, Dataset, Task - before
-bolting on scoring and experiment orchestration.
+    Dataset  -> iterable of Examples (input + expected)
+    Task     -> wraps a model call; turns Example.input into a prediction
+    Scorer   -> pure function: (example, prediction) -> ScoreResult
+    Experiment -> a configured run: dataset x task x scorers
 """
 
 from __future__ import annotations
@@ -12,27 +14,36 @@ from pathlib import Path
 from typing import Any, Iterator
 
 
+# ---------------------------------------------------------------------------
+# Data primitives
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class Example:
-    """A single eval datapoint.
-
-    `input` is whatever the task consumes (usually a dict of template vars).
-    `expected` is the reference answer - may be None for open-ended tasks.
-    `metadata` is free-form and is carried through to run outputs.
-    """
-
     id: str
     input: Any
     expected: Any = None
     metadata: dict = field(default_factory=dict)
 
 
+@dataclass
+class ScoreResult:
+    """Result of scoring a single prediction. `score` is normalized to [0, 1]."""
+
+    name: str
+    score: float
+    passed: bool
+    rationale: str = ""
+    metadata: dict = field(default_factory=dict)
+
+
+# ---------------------------------------------------------------------------
+# Dataset
+# ---------------------------------------------------------------------------
+
+
 class Dataset:
-    """A thin wrapper over a list of Examples.
-
-    Kept simple on purpose - if you need streaming/sharding, subclass this.
-    """
-
     def __init__(self, examples: list[Example], name: str = "dataset"):
         self.name = name
         self.examples = examples
@@ -64,11 +75,13 @@ class Dataset:
         return cls(examples, name=name or path.stem)
 
 
+# ---------------------------------------------------------------------------
+# Task
+# ---------------------------------------------------------------------------
+
+
 @dataclass
 class Task:
-    """A task wraps a prompt template. Model call comes later once we have
-    a client abstraction - for now `run` just renders the prompt."""
-
     name: str
     prompt_template: str
     system: str | None = None
@@ -79,3 +92,43 @@ class Task:
         if isinstance(example.input, dict):
             return self.prompt_template.format(**example.input)
         return self.prompt_template.format(input=example.input)
+
+
+# ---------------------------------------------------------------------------
+# Scorer base
+# ---------------------------------------------------------------------------
+
+
+class Scorer:
+    """Abstract scorer. Subclasses implement `score`."""
+
+    name: str = "scorer"
+
+    def score(self, example: Example, prediction: str) -> ScoreResult:
+        raise NotImplementedError
+
+    def describe(self) -> dict:
+        return {"name": self.name, "type": self.__class__.__name__}
+
+
+# ---------------------------------------------------------------------------
+# Experiment (skeleton — no run loop yet)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class Experiment:
+    """The recipe. Doesn't actually execute until we wire up clients + Run."""
+
+    name: str
+    dataset: Dataset
+    task: Task
+    scorers: list[Scorer]
+
+    def describe(self) -> dict:
+        return {
+            "name": self.name,
+            "dataset": self.dataset.name,
+            "task": self.task.name,
+            "scorers": [s.describe() for s in self.scorers],
+        }
