@@ -4,14 +4,20 @@
     Task     -> wraps a model call; turns Example.input into a prediction
     Scorer   -> pure function: (example, prediction) -> ScoreResult
     Experiment -> a configured run: dataset x task x scorers
+    Run      -> the materialized output of executing an Experiment
+
+Keeping these orthogonal means you can swap any piece without touching
+the others.
 """
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+import time
+import uuid
+from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 
 
 # ---------------------------------------------------------------------------
@@ -29,8 +35,6 @@ class Example:
 
 @dataclass
 class ScoreResult:
-    """Result of scoring a single prediction. `score` is normalized to [0, 1]."""
-
     name: str
     score: float
     passed: bool
@@ -76,7 +80,8 @@ class Dataset:
 
 
 # ---------------------------------------------------------------------------
-# Task
+# Task (no client yet — returns the rendered prompt so we can exercise
+# the run/save/load path end-to-end before wiring providers in)
 # ---------------------------------------------------------------------------
 
 
@@ -93,6 +98,10 @@ class Task:
             return self.prompt_template.format(**example.input)
         return self.prompt_template.format(input=example.input)
 
+    def run(self, example: Example) -> str:
+        # Placeholder until LLMClient lands — echo the rendered prompt.
+        return self.render(example)
+
 
 # ---------------------------------------------------------------------------
 # Scorer base
@@ -100,8 +109,6 @@ class Task:
 
 
 class Scorer:
-    """Abstract scorer. Subclasses implement `score`."""
-
     name: str = "scorer"
 
     def score(self, example: Example, prediction: str) -> ScoreResult:
@@ -112,23 +119,155 @@ class Scorer:
 
 
 # ---------------------------------------------------------------------------
-# Experiment (skeleton — no run loop yet)
+# Experiment + Run
 # ---------------------------------------------------------------------------
 
 
 @dataclass
-class Experiment:
-    """The recipe. Doesn't actually execute until we wire up clients + Run."""
+class ExampleResult:
+    example_id: str
+    input: Any
+    expected: Any
+    prediction: str
+    scores: list[ScoreResult]
+    latency_ms: float
+    metadata: dict = field(default_factory=dict)
 
+
+@dataclass
+class Run:
+    """The materialized output of executing an Experiment.
+
+    Persisted as JSONL so you can diff two runs without loading them into
+    a database.
+    """
+
+    run_id: str
+    experiment_name: str
+    timestamp: float
+    git_sha: str
+    config_hash: str
+    config: dict
+    results: list[ExampleResult]
+
+    def aggregate(self) -> dict[str, float]:
+        totals: dict[str, list[float]] = {}
+        for r in self.results:
+            for s in r.scores:
+                totals.setdefault(s.name, []).append(s.score)
+        return {k: sum(v) / len(v) if v else 0.0 for k, v in totals.items()}
+
+    def pass_rate(self) -> dict[str, float]:
+        totals: dict[str, list[int]] = {}
+        for r in self.results:
+            for s in r.scores:
+                totals.setdefault(s.name, []).append(1 if s.passed else 0)
+        return {k: sum(v) / len(v) if v else 0.0 for k, v in totals.items()}
+
+    def save(self, runs_dir: str | Path = "runs") -> Path:
+        runs_dir = Path(runs_dir)
+        runs_dir.mkdir(parents=True, exist_ok=True)
+        path = runs_dir / f"{self.run_id}.jsonl"
+        with path.open("w") as f:
+            header = {
+                "kind": "header",
+                "run_id": self.run_id,
+                "experiment_name": self.experiment_name,
+                "timestamp": self.timestamp,
+                "git_sha": self.git_sha,
+                "config_hash": self.config_hash,
+                "config": self.config,
+                "aggregate": self.aggregate(),
+                "pass_rate": self.pass_rate(),
+            }
+            f.write(json.dumps(header) + "\n")
+            for r in self.results:
+                row = {
+                    "kind": "result",
+                    "example_id": r.example_id,
+                    "input": r.input,
+                    "expected": r.expected,
+                    "prediction": r.prediction,
+                    "latency_ms": r.latency_ms,
+                    "metadata": r.metadata,
+                    "scores": [asdict(s) for s in r.scores],
+                }
+                f.write(json.dumps(row, default=str) + "\n")
+        return path
+
+    @classmethod
+    def load(cls, path: str | Path) -> "Run":
+        path = Path(path)
+        results: list[ExampleResult] = []
+        header: dict | None = None
+        with path.open() as f:
+            for line in f:
+                row = json.loads(line)
+                if row.get("kind") == "header":
+                    header = row
+                elif row.get("kind") == "result":
+                    results.append(
+                        ExampleResult(
+                            example_id=row["example_id"],
+                            input=row["input"],
+                            expected=row["expected"],
+                            prediction=row["prediction"],
+                            scores=[ScoreResult(**s) for s in row["scores"]],
+                            latency_ms=row.get("latency_ms", 0.0),
+                            metadata=row.get("metadata", {}),
+                        )
+                    )
+        if header is None:
+            raise ValueError(f"Run file {path} has no header row")
+        return cls(
+            run_id=header["run_id"],
+            experiment_name=header["experiment_name"],
+            timestamp=header["timestamp"],
+            git_sha=header["git_sha"],
+            config_hash=header["config_hash"],
+            config=header["config"],
+            results=results,
+        )
+
+
+@dataclass
+class Experiment:
     name: str
     dataset: Dataset
     task: Task
     scorers: list[Scorer]
 
-    def describe(self) -> dict:
-        return {
-            "name": self.name,
-            "dataset": self.dataset.name,
-            "task": self.task.name,
-            "scorers": [s.describe() for s in self.scorers],
-        }
+    def run(self, git_sha: str = "unknown", config_hash: str = "unknown",
+            config: dict | None = None, progress: Callable[[int, int], None] | None = None) -> Run:
+        results: list[ExampleResult] = []
+        total = len(self.dataset)
+        for i, ex in enumerate(self.dataset):
+            t0 = time.perf_counter()
+            try:
+                prediction = self.task.run(ex)
+            except Exception as e:  # noqa: BLE001
+                prediction = f"<ERROR: {type(e).__name__}: {e}>"
+            latency_ms = (time.perf_counter() - t0) * 1000
+            scores = [s.score(ex, prediction) for s in self.scorers]
+            results.append(
+                ExampleResult(
+                    example_id=ex.id,
+                    input=ex.input,
+                    expected=ex.expected,
+                    prediction=prediction,
+                    scores=scores,
+                    latency_ms=latency_ms,
+                    metadata=ex.metadata,
+                )
+            )
+            if progress:
+                progress(i + 1, total)
+        return Run(
+            run_id=f"{self.name}-{int(time.time())}-{uuid.uuid4().hex[:6]}",
+            experiment_name=self.name,
+            timestamp=time.time(),
+            git_sha=git_sha,
+            config_hash=config_hash,
+            config=config or {},
+            results=results,
+        )
