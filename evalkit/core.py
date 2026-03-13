@@ -17,7 +17,10 @@ import time
 import uuid
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
-from typing import Any, Callable, Iterator
+from typing import Any, Callable, Iterator, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from evalkit.clients import LLMClient
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +92,7 @@ class Dataset:
 class Task:
     name: str
     prompt_template: str
+    client: "LLMClient"
     system: str | None = None
     temperature: float = 0.0
     max_tokens: int = 512
@@ -99,8 +103,13 @@ class Task:
         return self.prompt_template.format(input=example.input)
 
     def run(self, example: Example) -> str:
-        # Placeholder until LLMClient lands — echo the rendered prompt.
-        return self.render(example)
+        prompt = self.render(example)
+        return self.client.complete(
+            prompt=prompt,
+            system=self.system,
+            temperature=self.temperature,
+            max_tokens=self.max_tokens,
+        )
 
 
 # ---------------------------------------------------------------------------
