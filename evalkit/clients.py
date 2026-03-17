@@ -9,6 +9,7 @@ so the whole harness runs offline with zero API keys.
 from __future__ import annotations
 
 import hashlib
+import os
 import random
 import re
 from dataclasses import dataclass
@@ -37,10 +38,22 @@ def _canned_output(prompt: str, model: str) -> str:
     """
     p = prompt.lower()
 
+    # judge heuristic (must come first — judge prompts often embed text
+    # from the task under grading, which would trip downstream branches)
+    if "rate the model" in p or "impartial grader" in p or "on a scale of 1-5" in p \
+            or "choosing the better" in p or '"winner"' in p:
+        import hashlib as _h
+        h = int(_h.md5(prompt.encode()).hexdigest(), 16)
+        if "winner" in p or "choosing the better" in p:
+            winner = ["A", "B", "tie"][h % 3]
+            return f'{{"winner": "{winner}", "rationale": "stub judge"}}'
+        rating = 3 + (h % 3)  # 3..5
+        return f'{{"rating": {rating}, "rationale": "stub judge"}}'
+
     # sentiment heuristic
     if "sentiment" in p or "positive" in p or "negative" in p:
-        pos = sum(p.count(w) for w in ("love", "great", "amazing", "good", "best"))
-        neg = sum(p.count(w) for w in ("hate", "bad", "terrible", "awful", "worst"))
+        pos = sum(p.count(w) for w in ("love", "great", "amazing", "good", "best", "fantastic", "wonderful", "excellent"))
+        neg = sum(p.count(w) for w in ("hate", "bad", "terrible", "awful", "worst", "horrible", "disappointing"))
         if pos > neg:
             return "positive"
         if neg > pos:
@@ -50,6 +63,39 @@ def _canned_output(prompt: str, model: str) -> str:
     # fallback: echo + hash so outputs differ but are deterministic
     h = hashlib.md5((model + prompt).encode()).hexdigest()[:8]
     return f"[stub:{model}:{h}] {prompt[:80]}"
+
+
+@dataclass
+class OpenAIClient:
+    provider: str = "openai"
+    model: str = "gpt-4o-mini"
+    dry_run: bool = True
+    api_key_env: str = "OPENAI_API_KEY"
+
+    def complete(self, prompt: str, system: str | None = None,
+                 temperature: float = 0.0, max_tokens: int = 512) -> str:
+        if self.dry_run:
+            return _canned_output(prompt, self.model)
+        # Real-call shape - kept here so the integration point is obvious.
+        api_key = os.environ.get(self.api_key_env)
+        if not api_key:
+            raise RuntimeError(f"{self.api_key_env} not set; use --dry-run to skip real calls")
+        try:
+            from openai import OpenAI  # type: ignore
+        except ImportError as e:
+            raise RuntimeError("openai package not installed") from e
+        client = OpenAI(api_key=api_key)
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        resp = client.chat.completions.create(
+            model=self.model,
+            messages=messages,
+            temperature=temperature,
+            max_tokens=max_tokens,
+        )
+        return resp.choices[0].message.content or ""
 
 
 @dataclass
