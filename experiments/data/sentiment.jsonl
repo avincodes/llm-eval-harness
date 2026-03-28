@@ -1,0 +1,8 @@
+{"id": "sent-1", "input": {"text": "I absolutely love this product, it's amazing!"}, "expected": "positive", "metadata": {"split": "dev"}}
+{"id": "sent-2", "input": {"text": "This was the worst experience I have ever had."}, "expected": "negative", "metadata": {"split": "dev"}}
+{"id": "sent-3", "input": {"text": "The package arrived on time."}, "expected": "neutral", "metadata": {"split": "dev"}}
+{"id": "sent-4", "input": {"text": "Fantastic service and great value!"}, "expected": "positive", "metadata": {"split": "dev"}}
+{"id": "sent-5", "input": {"text": "Terrible quality, very disappointing."}, "expected": "negative", "metadata": {"split": "dev"}}
+{"id": "sent-6", "input": {"text": "It works as described."}, "expected": "neutral", "metadata": {"split": "dev"}}
+{"id": "sent-7", "input": {"text": "The best purchase I have made this year!"}, "expected": "positive", "metadata": {"split": "dev"}}
+{"id": "sent-8", "input": {"text": "I hate how awful the support has been."}, "expected": "negative", "metadata": {"split": "dev"}}

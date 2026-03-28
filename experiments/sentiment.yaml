@@ -1,0 +1,34 @@
+name: sentiment
+description: >
+  Classify short product reviews as positive / negative / neutral.
+  Two model variants so the harness can show how variant comparison works.
+
+dataset:
+  path: data/sentiment.jsonl
+  name: sentiment_dev
+
+variants:
+  - name: openai_gpt4o_mini
+    provider: openai
+    model: gpt-4o-mini
+    system: "You are a sentiment classifier. Reply with exactly one word: positive, negative, or neutral."
+    prompt: |
+      Classify the sentiment of the following text. Reply with one word only.
+      TEXT: {text}
+      SENTIMENT:
+    temperature: 0.0
+    max_tokens: 4
+
+  - name: anthropic_haiku
+    provider: anthropic
+    model: claude-3-5-haiku-latest
+    system: "You are a sentiment classifier. Reply with exactly one word."
+    prompt: |
+      Classify sentiment (positive/negative/neutral) of: {text}
+    temperature: 0.0
+    max_tokens: 4
+
+scorers:
+  - type: exact_match
+    case_sensitive: false
+  - type: contains
