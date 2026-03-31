@@ -1,0 +1,40 @@
+name: sql_generation
+description: >
+  Natural-language to SQL. Uses exact match for structural correctness,
+  contains-based checks for keywords, and an LLM-as-judge for semantic
+  equivalence (so stylistic differences don't count as wrong).
+
+dataset:
+  path: data/sql.jsonl
+
+judge:
+  provider: anthropic
+  model: claude-3-5-sonnet-latest
+
+variants:
+  - name: openai_gpt4o_mini
+    provider: openai
+    model: gpt-4o-mini
+    system: "You are a SQL generator. Output only the SQL, no prose."
+    prompt: |
+      Write a SQL query that answers this question. Output only the SQL.
+      QUESTION: {question}
+      SQL:
+    temperature: 0.0
+    max_tokens: 128
+
+  - name: local_7b
+    provider: local
+    model: local-stub-7b
+    system: "Output only valid SQL."
+    prompt: |
+      Convert to SQL: {question}
+    temperature: 0.0
+    max_tokens: 128
+
+scorers:
+  - type: contains
+  - type: regex
+    pattern: "^\\s*SELECT\\b"
+  - type: llm_judge
+    pass_threshold: 0.5

@@ -1,0 +1,5 @@
+{"id": "sql-1", "input": {"question": "How many rows are in the users table?"}, "expected": "SELECT COUNT(*) FROM users;", "metadata": {"difficulty": "easy"}}
+{"id": "sql-2", "input": {"question": "Show all rows from the orders table."}, "expected": "SELECT * FROM orders;", "metadata": {"difficulty": "easy"}}
+{"id": "sql-3", "input": {"question": "What is the average price in the products table?"}, "expected": "SELECT AVG(price) FROM products;", "metadata": {"difficulty": "medium"}}
+{"id": "sql-4", "input": {"question": "Count the rows in the events table."}, "expected": "SELECT COUNT(*) FROM events;", "metadata": {"difficulty": "easy"}}
+{"id": "sql-5", "input": {"question": "Get the average score from the results table."}, "expected": "SELECT AVG(score) FROM results;", "metadata": {"difficulty": "medium"}}
