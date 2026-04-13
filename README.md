@@ -158,6 +158,8 @@ README so it's always in sync with the code.)
   means of 20 examples and pretending a 2pp delta is real).
 - [ ] Token + latency tracking surfaced in the HTML report.
 - [ ] Ollama/vLLM HTTP backends for `local`.
+- [ ] GitHub Action that posts a comparison report as a PR comment on
+  every prompt change.
 
 ## Layout
 
