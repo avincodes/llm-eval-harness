@@ -1,23 +1,21 @@
-"""evalkit - a small LLM evaluation harness."""
+"""evalkit - a small, opinionated LLM evaluation harness.
 
-from evalkit.core import (
-    Dataset,
-    Example,
-    Experiment,
-    Run,
-    Scorer,
-    ScoreResult,
-    Task,
-)
+Exports the core primitives so users can import them directly:
+
+    from evalkit import Dataset, Task, Experiment, Run
+    from evalkit.scorers import ExactMatch, Contains, LLMJudge
+"""
+
+from evalkit.core import Dataset, Task, Scorer, Experiment, Run, Example, ScoreResult
 
 __all__ = [
     "Dataset",
-    "Example",
+    "Task",
+    "Scorer",
     "Experiment",
     "Run",
-    "Scorer",
+    "Example",
     "ScoreResult",
-    "Task",
 ]
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"

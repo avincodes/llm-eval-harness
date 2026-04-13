@@ -11,12 +11,10 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass
-from typing import Any, TYPE_CHECKING
+from typing import Any
 
 from evalkit.core import Example, ScoreResult, Scorer
-
-if TYPE_CHECKING:
-    from evalkit.clients import LLMClient  # defined later
+from evalkit.clients import LLMClient
 
 
 # ---------------------------------------------------------------------------
@@ -67,6 +65,10 @@ class Contains(Scorer):
 
 @dataclass
 class Regex(Scorer):
+    """Match prediction against a regex. The regex can either be hardcoded
+    on the scorer (a 'pattern' at config time) or pulled from
+    example.expected (if the dataset itself specifies per-row patterns)."""
+
     name: str = "regex"
     pattern: str | None = None
     flags: int = re.IGNORECASE
@@ -93,6 +95,10 @@ _NUM_RE = re.compile(r"-?\d+(?:\.\d+)?")
 
 @dataclass
 class NumericTolerance(Scorer):
+    """Extract the first number from the prediction and compare to expected
+    within an absolute or relative tolerance. Partial credit is given as
+    1 - (error / tolerance), clamped to [0, 1]."""
+
     name: str = "numeric_tolerance"
     abs_tol: float = 0.0
     rel_tol: float = 0.0
@@ -152,11 +158,12 @@ class LLMJudge(Scorer):
     use a stronger/cheaper model for grading than the one under test."""
 
     name: str = "llm_judge"
-    judge: Any = None  # LLMClient — typed loosely until clients lands
+    judge: LLMClient | None = None
     prompt_template: str = DEFAULT_JUDGE_PROMPT
-    pass_threshold: float = 0.6
+    pass_threshold: float = 0.6  # on the normalized score
 
     def _parse(self, text: str) -> tuple[float, str]:
+        """Extract rating. Tries JSON first, then regex fallback."""
         try:
             start = text.index("{")
             end = text.rindex("}") + 1
@@ -198,10 +205,16 @@ class LLMJudge(Scorer):
 
 @dataclass
 class PairwiseComparison(Scorer):
-    """Compare prediction against a baseline under metadata['baseline']."""
+    """Compare the prediction against a baseline prediction stored on the
+    Example under metadata['baseline']. The judge picks a winner; score is
+    1.0 if prediction wins, 0.5 for tie, 0.0 for loss.
+
+    This is how you bootstrap evals when you don't have gold answers -
+    you just want to know 'did variant B beat variant A?'.
+    """
 
     name: str = "pairwise"
-    judge: Any = None
+    judge: LLMClient | None = None
     prompt_template: str = (
         "You are choosing the better of two answers to a question.\n\n"
         "QUESTION: {question}\n\n"
@@ -254,7 +267,7 @@ SCORER_REGISTRY: dict[str, type[Scorer]] = {
 }
 
 
-def build_scorer(spec: dict[str, Any], judge_client: Any = None) -> Scorer:
+def build_scorer(spec: dict[str, Any], judge_client: LLMClient | None = None) -> Scorer:
     """Build a scorer from a YAML dict like {type: exact_match, case_sensitive: false}."""
     spec = dict(spec)
     stype = spec.pop("type")

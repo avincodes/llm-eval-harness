@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "evalkit"
-version = "0.0.1"
-description = "Lightweight LLM evaluation harness."
+version = "0.1.0"
+description = "Lightweight LLM evaluation harness with pluggable scorers, LLM-as-judge, regression detection, and HTML reports."
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Avin Indrasoma" }]
@@ -14,6 +14,17 @@ dependencies = [
     "pyyaml>=6.0",
 ]
 
+[project.optional-dependencies]
+openai = ["openai>=1.0"]
+anthropic = ["anthropic>=0.30"]
+dev = ["pytest>=7", "pytest-cov"]
+
+[project.scripts]
+evalkit = "evalkit.__main__:main"
+
 [tool.setuptools.packages.find]
 include = ["evalkit*"]
 exclude = ["tests*", "experiments*", "runs*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
